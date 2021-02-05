@@ -17,13 +17,44 @@ import (
 // frequency is calculated as log(n/df) where df is the number of documents in which the
 // term occurs and n is the total number of documents within the corpus.  We add 1 to both n
 // and df before division to prevent division by zero.
+// weightPadding can be used to add a value to weights after calculation to make sure terms with zero idf don't get suppressed entirely
+// l2Normalization can be used to l2 normalize the values in the matrix after a Transform() is done, done on either each row or each column
 type TfidfTransformer struct {
-	transform *sparse.DIA
+	transform       *sparse.DIA
+	weightPadding   float64
+	l2Normalization int
 }
+
+//L2 Normalization options for the TF-IDF Transformer
+const (
+	NoL2Normalization = iota
+	RowBasedL2Normalization
+	ColBasedL2Normalization
+)
 
 // NewTfidfTransformer constructs a new TfidfTransformer.
 func NewTfidfTransformer() *TfidfTransformer {
 	return &TfidfTransformer{}
+}
+
+// GetWeightPadding retrieves the weight padding that is added to weights during Fit()
+func (t *TfidfTransformer) GetWeightPadding() float64 {
+	return t.weightPadding
+}
+
+// SetWeightPadding sets the weight padding that is added to weights during Fit()
+func (t *TfidfTransformer) SetWeightPadding(wp float64) {
+	t.weightPadding = wp
+}
+
+//GetL2Normalization retrieves the type of normalization done during Transform()
+func (t *TfidfTransformer) GetL2Normalization() int {
+	return t.l2Normalization
+}
+
+// SetL2Normalization sets the type of normalization done during Transform()
+func (t *TfidfTransformer) SetL2Normalization(ln int) {
+	t.l2Normalization = ln
 }
 
 // Fit takes a training term document matrix, counts term occurrences across all documents
@@ -39,7 +70,8 @@ func (t *TfidfTransformer) Fit(matrix mat.Matrix) Transformer {
 	var df int
 	if csr, ok := matrix.(*sparse.CSR); ok {
 		for i := 0; i < m; i++ {
-			weights[i] = math.Log(float64(1+n) / float64(1+csr.RowNNZ(i)))
+			// weight padding can be used to ensure terms with zero idf don't get suppressed entirely.
+			weights[i] = math.Log(float64(1+n)/float64(1+csr.RowNNZ(i))) + t.weightPadding
 		}
 	} else {
 		for i := 0; i < m; i++ {
@@ -49,7 +81,8 @@ func (t *TfidfTransformer) Fit(matrix mat.Matrix) Transformer {
 					df++
 				}
 			}
-			weights[i] = math.Log(float64(1+n) / float64(1+df))
+			// weight padding can be used to ensure terms with zero idf don't get suppressed entirely.
+			weights[i] = math.Log(float64(1+n)/float64(1+df)) + t.weightPadding
 		}
 	}
 
@@ -74,8 +107,37 @@ func (t *TfidfTransformer) Transform(matrix mat.Matrix) (mat.Matrix, error) {
 	// simply multiply the matrix by our idf transform (the diagonal matrix of term weights)
 	product.Mul(t.transform, matrix)
 
-	// todo: possibly L2 norm matrix to remove any bias caused by documents of different
-	// lengths where longer documents naturally have more words and so higher word counts
+	//Perform L2 normalization of the matrix if the option is selected
+	if t.l2Normalization != NoL2Normalization {
+
+		//Transpose the matrix to normalize based on columns
+		if t.l2Normalization == ColBasedL2Normalization {
+			product.Clone(product.T().(*sparse.CSC).ToCSR())
+		}
+
+		rawProduct := product.RawMatrix()
+
+		//Perform normalization
+		for i := 0; i < rawProduct.I; i++ {
+			sum := 0.0
+
+			for j := rawProduct.Indptr[i]; j < rawProduct.Indptr[i+1]; j++ {
+				sum += rawProduct.Data[j] * rawProduct.Data[j]
+			}
+			if sum == 0.0 {
+				continue
+			}
+			sum = math.Sqrt(sum)
+			for j := rawProduct.Indptr[i]; j < rawProduct.Indptr[i+1]; j++ {
+				rawProduct.Data[j] /= sum
+			}
+		}
+
+		//Transpose the matrix back to original format if Column based normalization
+		if t.l2Normalization == ColBasedL2Normalization {
+			product.Clone(product.T().(*sparse.CSC).ToCSR())
+		}
+	}
 
 	return &product, nil
 }
