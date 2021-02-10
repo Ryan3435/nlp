@@ -19,10 +19,12 @@ import (
 // and df before division to prevent division by zero.
 // weightPadding can be used to add a value to weights after calculation to make sure terms with zero idf don't get suppressed entirely
 // l2Normalization can be used to l2 normalize the values in the matrix after a Transform() is done, done on either each row or each column
+// smoothIDF can be used to prevent zero divisions by adding 1 to the numerator and denominator of all IDF calculations as if an extra document with 1 instance of each term was seen
 type TfidfTransformer struct {
 	transform       *sparse.DIA
 	weightPadding   float64
 	l2Normalization int
+	smoothIDF       bool
 }
 
 //L2 Normalization options for the TF-IDF Transformer
@@ -35,6 +37,16 @@ const (
 // NewTfidfTransformer constructs a new TfidfTransformer.
 func NewTfidfTransformer() *TfidfTransformer {
 	return &TfidfTransformer{}
+}
+
+// GetSmooothIDF retrieives a boolean that represents if the current TfidfTransformer is configured to smooth IDF values
+func (t *TfidfTransformer) GetSmooothIDF() bool {
+	return t.smoothIDF
+}
+
+// SetSmooothIDF sets the TfidfTransformer configuration to either smooth IDF values or during calculation or to leave them raw
+func (t *TfidfTransformer) SetSmooothIDF(smoothIDF bool) {
+	t.smoothIDF = smoothIDF
 }
 
 // GetWeightPadding retrieves the weight padding that is added to weights during Fit()
@@ -66,12 +78,17 @@ func (t *TfidfTransformer) Fit(matrix mat.Matrix) Transformer {
 	}
 	m, n := matrix.Dims()
 
+	smoothing := 0
+	if t.smoothIDF {
+		smoothing = 1
+	}
+
 	weights := make([]float64, m)
 	var df int
 	if csr, ok := matrix.(*sparse.CSR); ok {
 		for i := 0; i < m; i++ {
 			// weight padding can be used to ensure terms with zero idf don't get suppressed entirely.
-			weights[i] = math.Log(float64(1+n)/float64(1+csr.RowNNZ(i))) + t.weightPadding
+			weights[i] = math.Log(float64(smoothing+n)/float64(smoothing+csr.RowNNZ(i))) + t.weightPadding
 		}
 	} else {
 		for i := 0; i < m; i++ {
@@ -82,7 +99,7 @@ func (t *TfidfTransformer) Fit(matrix mat.Matrix) Transformer {
 				}
 			}
 			// weight padding can be used to ensure terms with zero idf don't get suppressed entirely.
-			weights[i] = math.Log(float64(1+n)/float64(1+df)) + t.weightPadding
+			weights[i] = math.Log(float64(smoothing+n)/float64(smoothing+df)) + t.weightPadding
 		}
 	}
 
