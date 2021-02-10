@@ -39,13 +39,13 @@ func NewTfidfTransformer() *TfidfTransformer {
 	return &TfidfTransformer{}
 }
 
-// GetSmooothIDF retrieives a boolean that represents if the current TfidfTransformer is configured to smooth IDF values
-func (t *TfidfTransformer) GetSmooothIDF() bool {
+// GetSmoothIDF retrieives a boolean that represents if the current TfidfTransformer is configured to smooth IDF values
+func (t *TfidfTransformer) GetSmoothIDF() bool {
 	return t.smoothIDF
 }
 
-// SetSmooothIDF sets the TfidfTransformer configuration to either smooth IDF values or during calculation or to leave them raw
-func (t *TfidfTransformer) SetSmooothIDF(smoothIDF bool) {
+// SetSmoothIDF sets the TfidfTransformer configuration to either smooth IDF values or during calculation or to leave them raw
+func (t *TfidfTransformer) SetSmoothIDF(smoothIDF bool) {
 	t.smoothIDF = smoothIDF
 }
 
